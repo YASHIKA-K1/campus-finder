@@ -12,7 +12,7 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     if (userInfo) {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      const apiUrl = import.meta.env.VITE_API_URL;
       if (import.meta.env.DEV) console.log('Connecting to socket.io at:', apiUrl);
       
       const newSocket = io(apiUrl, {

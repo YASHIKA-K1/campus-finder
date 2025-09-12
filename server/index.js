@@ -19,13 +19,30 @@ const createMessageRoutes = require('./routes/message.routes.js');
 const app = express();
 const server = http.createServer(app);
 
-const allowedOrigins = (process.env.CLIENT_ORIGINS || 'http://localhost:5173')
+const staticAllowedOrigins = (process.env.CLIENT_ORIGINS || 'http://localhost:5173')
   .split(',')
   .map((s) => s.trim());
 
+// Allow Vercel preview and production domains dynamically
+const corsOrigin = (origin, callback) => {
+  // Allow non-browser requests and same-origin
+  if (!origin) return callback(null, true);
+
+  // Normalize origin for comparison
+  const normalized = origin.toLowerCase();
+
+  const isStaticAllowed = staticAllowedOrigins.includes(normalized);
+  const isVercelDomain = /https?:\/\/([a-z0-9-]+-)?campus-finder(.*)?\.vercel\.app$/i.test(normalized);
+
+  if (isStaticAllowed || isVercelDomain) {
+    return callback(null, true);
+  }
+  return callback(new Error(`CORS not allowed for origin: ${origin}`));
+};
+
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: corsOrigin,
     methods: ["GET", "POST"],
   },
 });
@@ -63,7 +80,7 @@ io.on('connection', (socket) => {
 });
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: corsOrigin,
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
