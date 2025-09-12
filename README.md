@@ -69,10 +69,6 @@ server/   Express API, Socket.IO, MongoDB models, services, cron jobs
 - Server
   - `npm start` – start API and Socket.IO server
 
-### Deployment Notes
-- Set `CLIENT_ORIGINS` on the server to your deployed client URL(s)
-- Set `VITE_API_URL` in the client to the deployed API URL
-- Ensure Cloudinary env vars are configured in the server environment
 
 ### More Docs
 - See `client/README.md` for frontend specifics (pages, contexts, styling)

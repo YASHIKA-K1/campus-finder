@@ -59,10 +59,5 @@ npm run dev  # if nodemon is configured
 - `npm start` – start the server
 - `node scripts/backfill_embeddings.js` – optional embedding backfill (requires `OPENAI_API_KEY`)
 
-## Development Notes
-- Ensure the client base URL is included in `CLIENT_ORIGINS`
-- Server listens on `PORT` after a successful MongoDB connection
-- Socket events:
-  - Server emits `newMessage` to specific users on direct sends
-  - Server may emit `newNotification` for matches/messages consumed by the client
+
 
