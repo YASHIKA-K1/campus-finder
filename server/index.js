@@ -9,20 +9,16 @@ const { Server } = require('socket.io');
 
 const { findAndNotifyMatches, processItemsWithoutEmbeddings } = require('./services/matching.service.js');
 
-// Load environment variables
 dotenv.config();
 
-// Import routes
 const authRoutes = require('./routes/auth_routes.js');
 const itemRoutes = require('./routes/item_routes.js');
 const notificationRoutes = require('./routes/notification.routes.js');
-const createMessageRoutes = require('./routes/message.routes.js'); // must return a router
+const createMessageRoutes = require('./routes/message.routes.js');
 
-// Initialize Express app and HTTP server
 const app = express();
 const server = http.createServer(app);
 
-// Attach socket.io to the server
 const allowedOrigins = (process.env.CLIENT_ORIGINS || 'http://localhost:5173')
   .split(',')
   .map((s) => s.trim());
@@ -34,9 +30,8 @@ const io = new Server(server, {
   },
 });
 
-const userSocketMap = {}; // { userId: socketId }
+const userSocketMap = {};
 
-// --- Real-time Socket.io Logic ---
 io.on('connection', (socket) => {
   if (process.env.NODE_ENV !== 'production') {
     console.log('A user connected:', socket.id);
@@ -67,27 +62,26 @@ io.on('connection', (socket) => {
   });
 });
 
-// Middleware
-app.use(cors({ origin: allowedOrigins }));
+app.use(cors({
+  origin: allowedOrigins,
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
+}));
 app.use(express.json());
 
-// --- API Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api/notifications', notificationRoutes);
-app.use('/api/messages', createMessageRoutes(io)); // FIXED: router factory
+app.use('/api/messages', createMessageRoutes(io));
 
-// --- API Health Check ---
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// --- A Simple Test Route ---
 app.get('/', (req, res) => {
   res.send('Campus Finder API is running...');
 });
 
-// --- Start Server After Connecting to DB ---
 const PORT = process.env.PORT || 5000;
 const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/campus-finder';
 
