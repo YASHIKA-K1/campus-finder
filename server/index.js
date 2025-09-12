@@ -77,16 +77,10 @@ app.use('/api/items', itemRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/messages', createMessageRoutes(io)); // FIXED: router factory
 
-// --- Serve frontend in production ---
-if (process.env.NODE_ENV === 'production') {
-  const clientDistPath = path.join(__dirname, '..', 'client', 'dist');
-  app.use(express.static(clientDistPath));
-
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(clientDistPath, 'index.html'));
-  });
-}
+// --- API Health Check ---
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
 
 // --- A Simple Test Route ---
 app.get('/', (req, res) => {
