@@ -73,3 +73,4 @@ server/   Express API, Socket.IO, MongoDB models, services, cron jobs
 ### More Docs
 - See `client/README.md` for frontend specifics (pages, contexts, styling)
 - See `server/README.md` for API surface, sockets, envs, cron jobs, and scripts
+- See `DEPLOYMENT.md` for deploying the server to Render and the client to Vercel
