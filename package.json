@@ -1,4 +1,23 @@
 {
+  "name": "campus-finder",
+  "version": "1.0.0",
+  "description": "Campus Finder - A platform for finding and sharing campus resources",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "start": "cd server && npm start",
+    "install-all": "npm install && cd server && npm install && cd ../client && npm install",
+    "build-all": "npm run build && cd server && npm ci"
+  },
+  "keywords": ["campus", "finder", "resources", "sharing"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
   "dependencies": {
     "leaflet": "^1.9.4",
     "react-leaflet": "^5.0.0"
