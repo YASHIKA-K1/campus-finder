@@ -16,6 +16,34 @@ const cosineSimilarity = (vecA, vecB) => {
 const SIMILARITY_THRESHOLD = 0.60;
 const GENERIC_CATEGORIES = new Set(['phone', 'wallet', 'keys', 'bag', 'book', 'laptop', 'charger', 'mouse', 'keyboard', 'bracelet', 'watch', 'glasses']);
 
+// Helper function to calculate distance between two coordinates in kilometers
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
+// Helper function for flexible description matching
+const isDescriptionMatch = (desc1, desc2) => {
+  if (!desc1 || !desc2) return false;
+  
+  const words1 = desc1.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+  const words2 = desc2.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+  
+  // Calculate word overlap percentage
+  const commonWords = words1.filter(word => words2.includes(word));
+  const totalWords = Math.max(words1.length, words2.length);
+  const overlapPercentage = commonWords.length / totalWords;
+  
+  // Consider it a match if there's at least 20% word overlap
+  return overlapPercentage >= 0.2;
+};
+
 const findAndNotifyMatches = async (io) => {
   try {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -28,9 +56,19 @@ const findAndNotifyMatches = async (io) => {
     for (const newItem of newItems) {
       const oppositeItemType = newItem.itemType === 'Lost' ? 'Found' : 'Lost';
       
+      // Use MongoDB geospatial query to find items within 1km radius
       const potentialMatches = await Item.find({
         itemType: oppositeItemType,
-        status: 'active'
+        status: 'active',
+        location: {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: newItem.location.coordinates
+            },
+            $maxDistance: 1000 // 1km in meters
+          }
+        }
       }).lean();
 
       for (const potentialMatch of potentialMatches) {
@@ -51,15 +89,19 @@ const findAndNotifyMatches = async (io) => {
           }
 
           if (!isMatch) {
-            const descriptionMatch = newItem.description && potentialMatch.description &&
-              (newItem.description.toLowerCase().includes(potentialMatch.description.toLowerCase()) ||
-              potentialMatch.description.toLowerCase().includes(newItem.description.toLowerCase()));
+            // For fallback matching, prioritize category match
+            // If categories match, we have a potential match
+            isMatch = true;
+            matchType = 'Category';
             
+            // Additional description matching for better confidence
+            const descriptionMatch = isDescriptionMatch(newItem.description, potentialMatch.description);
             const isGenericCategory = GENERIC_CATEGORIES.has(newItem.category.toLowerCase());
             
+            // If we have both category match AND (description match OR generic category), 
+            // this is a stronger match
             if (descriptionMatch || isGenericCategory) {
-              isMatch = true;
-              matchType = 'Category';
+              matchType = 'Category+Description';
             }
           }
 
@@ -77,9 +119,14 @@ const findAndNotifyMatches = async (io) => {
             const notifications = [];
             
             if (!alreadyNotified1) {
-              const message = matchType === 'AI' 
-                ? `A potential match for your ${newItem.itemType.toLowerCase()} ${newItem.category} was found using AI!`
-                : `A potential match for your ${newItem.itemType.toLowerCase()} ${newItem.category} was found!`;
+              let message;
+              if (matchType === 'AI') {
+                message = `A potential match for your ${newItem.itemType.toLowerCase()} ${newItem.category} was found using AI!`;
+              } else if (matchType === 'Category+Description') {
+                message = `A potential match for your ${newItem.itemType.toLowerCase()} ${newItem.category} was found based on category and description!`;
+              } else {
+                message = `A potential match for your ${newItem.itemType.toLowerCase()} ${newItem.category} was found based on category and location!`;
+              }
               
               notifications.push({
                 user: userId1,
@@ -91,9 +138,14 @@ const findAndNotifyMatches = async (io) => {
             }
             
             if (!alreadyNotified2) {
-              const message = matchType === 'AI'
-                ? `Someone reported an item that looks similar to your ${potentialMatch.itemType.toLowerCase()} ${potentialMatch.category} using AI.`
-                : `Someone reported an item that matches your ${potentialMatch.itemType.toLowerCase()} ${potentialMatch.category}.`;
+              let message;
+              if (matchType === 'AI') {
+                message = `Someone reported an item that looks similar to your ${potentialMatch.itemType.toLowerCase()} ${potentialMatch.category} using AI.`;
+              } else if (matchType === 'Category+Description') {
+                message = `Someone reported an item that matches your ${potentialMatch.itemType.toLowerCase()} ${potentialMatch.category} based on category and description.`;
+              } else {
+                message = `Someone reported an item that matches your ${potentialMatch.itemType.toLowerCase()} ${potentialMatch.category} based on category and location.`;
+              }
               
               notifications.push({
                 user: userId2,
