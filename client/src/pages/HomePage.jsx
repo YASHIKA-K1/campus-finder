@@ -1,8 +1,15 @@
-// /src/pages/HomePage.jsx
 import { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
+import { Icon } from 'leaflet';
 import { AuthContext } from '../context/AuthContext';
+
+delete Icon.Default.prototype._getIconUrl;
+Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 function LocationMarker({ onLocationSelect }) {
   useMapEvents({
@@ -16,6 +23,7 @@ function LocationMarker({ onLocationSelect }) {
 const HomePage = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     itemType: 'Lost',
     category: '',
@@ -56,6 +64,7 @@ const HomePage = () => {
       return;
     }
 
+    setSubmitting(true);
     const submissionData = new FormData();
     submissionData.append('image', imageFile);
     submissionData.append('itemType', formData.itemType);
@@ -77,8 +86,12 @@ const HomePage = () => {
       setLocation(null);
       document.getElementById('image-upload').value = null;
       fetchItems();
+      alert('Item posted successfully!');
     } catch (error) {
       console.error('Failed to post item:', error.response?.data?.message);
+      alert('Failed to post item. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -186,7 +199,27 @@ const HomePage = () => {
                     required
                   />
                 </div>
-                <button type="submit" className="w-full flex justify-center py-3 px-6 border border-transparent rounded-xl shadow-md text-base font-bold text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">Post Item</button>
+                <button 
+                  type="submit" 
+                  disabled={submitting}
+                  className={`w-full flex justify-center items-center py-3 px-6 border border-transparent rounded-xl shadow-md text-base font-bold text-white focus:outline-none ${
+                    submitting 
+                      ? 'bg-indigo-400 cursor-not-allowed' 
+                      : 'bg-indigo-600 hover:bg-indigo-700'
+                  }`}
+                >
+                  {submitting ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Posting...
+                    </>
+                  ) : (
+                    'Post Item'
+                  )}
+                </button>
               </form>
             </div>
           ) : (

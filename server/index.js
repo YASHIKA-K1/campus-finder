@@ -1,5 +1,4 @@
 const express = require('express');
-const path = require('path');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const cors = require('cors');
@@ -21,16 +20,12 @@ const server = http.createServer(app);
 
 const staticAllowedOrigins = (process.env.CLIENT_ORIGINS || 'http://localhost:5173')
   .split(',')
-  .map((s) => s.trim());
+  .map(s => s.trim());
 
-// Allow Vercel preview and production domains dynamically
 const corsOrigin = (origin, callback) => {
-  // Allow non-browser requests and same-origin
   if (!origin) return callback(null, true);
 
-  // Normalize origin for comparison
   const normalized = origin.toLowerCase();
-
   const isStaticAllowed = staticAllowedOrigins.includes(normalized);
   const isVercelDomain = /https?:\/\/([a-z0-9-]+-)?campus-finder(.*)?\.vercel\.app$/i.test(normalized);
 
@@ -50,10 +45,6 @@ const io = new Server(server, {
 const userSocketMap = {};
 
 io.on('connection', (socket) => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('A user connected:', socket.id);
-  }
-
   const userId = socket.handshake.query.userId;
   if (userId && userId !== "undefined") {
     userSocketMap[userId] = socket.id;
@@ -67,9 +58,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('User disconnected:', socket.id);
-    }
     for (let uid in userSocketMap) {
       if (userSocketMap[uid] === socket.id) {
         delete userSocketMap[uid];
@@ -107,24 +95,15 @@ mongoose.connect(mongoUri)
     server.listen(PORT, () => {
       console.log(`Server listening on ${PORT}`);
     });
-    if (process.env.NODE_ENV !== 'production') {
-      console.log("Successfully connected to MongoDB.");
-    }
 
     io.userSocketMap = userSocketMap;
 
     cron.schedule('*/10 * * * * *', () => {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Running scheduled job: Finding item matches...');
-      }
       findAndNotifyMatches(io);
     });
 
     const embedCron = process.env.EMBED_CRON || '*/5 * * * *';
     cron.schedule(embedCron, () => {
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('Running scheduled job: Processing items without embeddings...');
-      }
       processItemsWithoutEmbeddings();
     });
   })

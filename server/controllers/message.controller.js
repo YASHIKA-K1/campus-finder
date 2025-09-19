@@ -2,10 +2,6 @@ const Conversation = require('../models/conversation.model.js');
 const Message = require('../models/message.model.js');
 const Notification = require('../models/notification.model.js');
 
-// @desc    Send a message
-// @route   POST /api/messages/send/:receiverId
-// @access  Private
-// Accept io as a parameter for real-time notification
 const sendMessage = async (req, res, io) => {
   try {
     const { message } = req.body;
@@ -28,14 +24,10 @@ const sendMessage = async (req, res, io) => {
       message,
     });
 
-    if (newMessage) {
-      conversation.messages.push(newMessage._id);
-    }
+    conversation.messages.push(newMessage._id);
 
-    // Save message and conversation
     await Promise.all([conversation.save(), newMessage.save()]);
 
-    // Create notification for receiver
     const notification = await Notification.create({
       user: receiverId,
       message: `You received a new message from user ${senderId}`,
@@ -44,8 +36,7 @@ const sendMessage = async (req, res, io) => {
       matchItemId: null,
     });
 
-    // Emit real-time notification event to receiver
-    if (io && io.userSocketMap && io.userSocketMap[receiverId]) {
+    if (io?.userSocketMap?.[receiverId]) {
       io.to(io.userSocketMap[receiverId]).emit('newNotification', notification);
     }
 
@@ -56,9 +47,6 @@ const sendMessage = async (req, res, io) => {
   }
 };
 
-// @desc    Get messages between users
-// @route   GET /api/messages/:userToChatId
-// @access  Private
 const getMessages = async (req, res) => {
   try {
     const { userToChatId } = req.params;
@@ -66,7 +54,7 @@ const getMessages = async (req, res) => {
 
     const conversation = await Conversation.findOne({
       participants: { $all: [senderId, userToChatId] },
-    }).populate("messages"); // Populate the messages field
+    }).populate("messages").lean();
 
     if (!conversation) {
       return res.status(200).json([]);

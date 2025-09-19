@@ -24,11 +24,6 @@ CLOUDINARY_CLOUD_NAME=...
 CLOUDINARY_API_KEY=...
 CLOUDINARY_API_SECRET=...
 ```
-Optional:
-```
-OPENAI_API_KEY=sk-...   # for scripts/backfill_embeddings.js
-EMBED_CRON=*/5 * * * *  # schedule for embedding processing (default every 5 minutes)
-```
 
 ## Run
 ```bash
@@ -54,6 +49,27 @@ npm run dev  # if nodemon is configured
 ## Background Jobs
 - Matching job runs every 10 seconds to find and notify potential matches
 - Embedding processing job runs on `EMBED_CRON` (default every 5 minutes)
+
+## AI Matching System
+The system uses Google Gemini API for image-based matching with intelligent fallback:
+
+### Primary Matching (AI-based)
+- Uses Google Gemini Vision API to analyze images and generate embeddings
+- Compares embeddings using cosine similarity (threshold: 0.60)
+- Requires both items to have embeddings
+
+### Fallback Matching (Category-based)
+- Activates when AI quota is exceeded or embeddings are unavailable
+- Matches items based on:
+  - Exact category match (case-insensitive)
+  - Description similarity
+  - Generic categories (phone, wallet, keys, bag, book, laptop, charger, mouse, keyboard, bracelet, watch, glasses)
+
+### Rate Limiting
+- When AI quota is exceeded (429 errors), system enters cooldown mode
+- Skips AI processing for 5 minutes (configurable via `AI_RATE_LIMIT_COOLDOWN_MS`)
+- Continues matching using fallback system
+- Automatically resumes AI processing after cooldown period
 
 ## Scripts
 - `npm start` – start the server

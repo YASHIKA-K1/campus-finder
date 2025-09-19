@@ -1,8 +1,7 @@
-// /server/services/matching.service.js
 const Item = require('../models/itemModel.js');
 const Notification = require('../models/notification.model.js');
 
-function cosineSimilarity(vecA, vecB) {
+const cosineSimilarity = (vecA, vecB) => {
   if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
   let dotProduct = 0, normA = 0, normB = 0;
   for (let i = 0; i < vecA.length; i++) {
@@ -12,107 +11,134 @@ function cosineSimilarity(vecA, vecB) {
   }
   if (normA === 0 || normB === 0) return 0;
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
+};
 
-// Using a more lenient threshold for better matching
 const SIMILARITY_THRESHOLD = 0.60;
+const GENERIC_CATEGORIES = new Set(['phone', 'wallet', 'keys', 'bag', 'book', 'laptop', 'charger', 'mouse', 'keyboard', 'bracelet', 'watch', 'glasses']);
 
 const findAndNotifyMatches = async (io) => {
   try {
-    // Using a 24-hour window to increase AI matching opportunities
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    
-    // Only fetch items that the AI has finished processing
     const newItems = await Item.find({ 
-      createdAt: { $gte: twentyFourHoursAgo },
-      imageEmbedding: { $exists: true, $ne: [] }
-    });
+      createdAt: { $gte: twentyFourHoursAgo }
+    }).lean();
 
     if (newItems.length === 0) return;
 
     for (const newItem of newItems) {
       const oppositeItemType = newItem.itemType === 'Lost' ? 'Found' : 'Lost';
       
-      // Also ensure potential matches have been processed by the AI
       const potentialMatches = await Item.find({
         itemType: oppositeItemType,
-        status: 'active',
-        imageEmbedding: { $exists: true, $ne: [] }
-      });
+        status: 'active'
+      }).lean();
 
       for (const potentialMatch of potentialMatches) {
         if (newItem._id.equals(potentialMatch._id)) continue;
 
-        // 1. Check for a case-insensitive category match first
         const isCategoryMatch = newItem.category.toLowerCase() === potentialMatch.category.toLowerCase();
         
         if (isCategoryMatch) {
-            // 2. If categories match, then check for visual similarity
+          let isMatch = false;
+          let matchType = '';
+
+          if (newItem.imageEmbedding?.length > 0 && potentialMatch.imageEmbedding?.length > 0) {
             const similarity = cosineSimilarity(newItem.imageEmbedding, potentialMatch.imageEmbedding);
-            console.log(`[Matcher] AI matching: [${newItem.category}] vs [${potentialMatch.category}]. Similarity: ${similarity.toFixed(2)}`);
-
             if (similarity > SIMILARITY_THRESHOLD) {
-              console.log(`✅ AI Match Found! Item ${newItem._id} and ${potentialMatch._id}`);
+              isMatch = true;
+              matchType = 'AI';
+            }
+          }
 
-              // Prevent duplicate notifications for the same match
-              const userId1 = newItem.user._id ? newItem.user._id : newItem.user;
-              const userId2 = potentialMatch.user._id ? potentialMatch.user._id : potentialMatch.user;
-              const matchId1 = potentialMatch._id;
-              const matchId2 = newItem._id;
+          if (!isMatch) {
+            const descriptionMatch = newItem.description && potentialMatch.description &&
+              (newItem.description.toLowerCase().includes(potentialMatch.description.toLowerCase()) ||
+              potentialMatch.description.toLowerCase().includes(newItem.description.toLowerCase()));
+            
+            const isGenericCategory = GENERIC_CATEGORIES.has(newItem.category.toLowerCase());
+            
+            if (descriptionMatch || isGenericCategory) {
+              isMatch = true;
+              matchType = 'Category';
+            }
+          }
 
-              const alreadyNotified1 = await Notification.findOne({ user: userId1, matchItemId: matchId1 });
-              const alreadyNotified2 = await Notification.findOne({ user: userId2, matchItemId: matchId2 });
+          if (isMatch) {
+            const userId1 = newItem.user._id || newItem.user;
+            const userId2 = potentialMatch.user._id || potentialMatch.user;
+            const matchId1 = potentialMatch._id;
+            const matchId2 = newItem._id;
 
-              let notif1 = null, notif2 = null;
-              if (!alreadyNotified1) {
-                notif1 = await Notification.create({
-                  user: userId1,
-                  message: `A potential match for your ${newItem.itemType.toLowerCase()} ${newItem.category} was found!`,
-                  itemId: newItem._id,
-                  otherUser: userId2,
-                  matchItemId: matchId1,
-                });
-                console.log('[Notification Debug] Created notif1:', notif1);
-                if (io && io.userSocketMap) {
-                  const receiverSocketId = io.userSocketMap[userId1.toString()];
-                  if (receiverSocketId) {
-                    io.to(receiverSocketId).emit('newNotification', notif1);
+            const [alreadyNotified1, alreadyNotified2] = await Promise.all([
+              Notification.findOne({ user: userId1, matchItemId: matchId1 }).lean(),
+              Notification.findOne({ user: userId2, matchItemId: matchId2 }).lean()
+            ]);
+
+            const notifications = [];
+            
+            if (!alreadyNotified1) {
+              const message = matchType === 'AI' 
+                ? `A potential match for your ${newItem.itemType.toLowerCase()} ${newItem.category} was found using AI!`
+                : `A potential match for your ${newItem.itemType.toLowerCase()} ${newItem.category} was found!`;
+              
+              notifications.push({
+                user: userId1,
+                message,
+                itemId: newItem._id,
+                otherUser: userId2,
+                matchItemId: matchId1,
+              });
+            }
+            
+            if (!alreadyNotified2) {
+              const message = matchType === 'AI'
+                ? `Someone reported an item that looks similar to your ${potentialMatch.itemType.toLowerCase()} ${potentialMatch.category} using AI.`
+                : `Someone reported an item that matches your ${potentialMatch.itemType.toLowerCase()} ${potentialMatch.category}.`;
+              
+              notifications.push({
+                user: userId2,
+                message,
+                itemId: potentialMatch._id,
+                otherUser: userId1,
+                matchItemId: matchId2,
+              });
+            }
+
+            if (notifications.length > 0) {
+              const createdNotifications = await Notification.insertMany(notifications);
+              
+              if (io?.userSocketMap) {
+                createdNotifications.forEach(notif => {
+                  const socketId = io.userSocketMap[notif.user.toString()];
+                  if (socketId) {
+                    io.to(socketId).emit('newNotification', notif);
                   }
-                }
-              }
-              if (!alreadyNotified2) {
-                notif2 = await Notification.create({
-                  user: userId2,
-                  message: `Someone reported an item that looks similar to your ${potentialMatch.itemType.toLowerCase()} ${potentialMatch.category}.`,
-                  itemId: potentialMatch._id,
-                  otherUser: userId1,
-                  matchItemId: matchId2,
                 });
-                console.log('[Notification Debug] Created notif2:', notif2);
-                if (io && io.userSocketMap) {
-                  const matchSocketId = io.userSocketMap[userId2.toString()];
-                  if (matchSocketId) {
-                    io.to(matchSocketId).emit('newNotification', notif2);
-                  }
-                }
               }
             }
+          }
         }
       }
     }
   } catch (error) {
-    console.error('Error in AI matching service:', error);
+    console.error('Error in matching service:', error);
   }
 };
 
-// Function to process items that don't have embeddings yet (batched + limited)
 const processItemsWithoutEmbeddings = async () => {
   try {
     const { generateEmbedding } = require('./ai.service.js');
+    
+    const rateLimitCooldown = process.env.AI_RATE_LIMIT_COOLDOWN_MS || 300000;
+    const lastRateLimit = process.env.LAST_AI_RATE_LIMIT;
+    if (lastRateLimit && (Date.now() - parseInt(lastRateLimit)) < rateLimitCooldown) {
+      return;
+    }
+    
     const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
     const batchSize = Number(process.env.EMBED_BATCH_SIZE || 3);
     const now = new Date();
-    // Atomically claim items to avoid duplicate processing
+    
     const items = [];
     for (let i = 0; i < batchSize; i++) {
       const claimed = await Item.findOneAndUpdate(
@@ -139,17 +165,15 @@ const processItemsWithoutEmbeddings = async () => {
       items.push(claimed);
     }
 
-    console.log(`[Matcher] Found ${items.length} items without embeddings to process`);
     for (const item of items) {
       try {
         const embedding = await generateEmbedding(item.imageUrl);
-        if (embedding && embedding.length > 0) {
+        if (embedding?.length > 0) {
           await Item.findByIdAndUpdate(item._id, {
             imageEmbedding: embedding,
             embeddingStatus: 'success',
             nextEmbedRetryAt: null
           });
-          console.log(`[Matcher] Successfully added embedding to item ${item._id}`);
         } else {
           const attempts = (item.embeddingAttempts || 0) + 1;
           const base = Number(process.env.EMBED_BACKOFF_BASE_MS || 1000);
@@ -161,7 +185,6 @@ const processItemsWithoutEmbeddings = async () => {
             embeddingAttempts: attempts,
             nextEmbedRetryAt: retryAt
           });
-          console.warn(`[Matcher] No embedding for ${item._id}. attempts=${attempts}, retryAt=${retryAt.toISOString()}`);
         }
       } catch (err) {
         const attempts = (item.embeddingAttempts || 0) + 1;
@@ -174,7 +197,6 @@ const processItemsWithoutEmbeddings = async () => {
           embeddingAttempts: attempts,
           nextEmbedRetryAt: retryAt
         });
-        console.error(`[Matcher] Error embedding item ${item._id}:`, err?.response?.data || err.message);
       }
     }
   } catch (error) {
